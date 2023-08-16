@@ -14,15 +14,21 @@
 <script>
 import { computed } from 'vue'
 
+const COLORS = {
+  FIRST: '#BDBDBD',
+  MIDDLE: '#E0E0E0',
+  LAST: '#EEEEEE'
+}
+
 export default {
   name: 'TreeItem',
-  props: ['item', 'color'],
+  props: ['item', 'index'],
   setup (props) {
     const treeItemContentStyle = computed(() => ({
         transform: `translate(${props.item.level * 15}px)`
     }))
     const treeItemStyle = computed(() => ({
-      'background-color': props.color
+      'background-color': props.item.parent_id === null ? COLORS.FIRST : props.index % 2 === 0 ? COLORS.MIDDLE : COLORS.LAST
     }))
     return { treeItemContentStyle, treeItemStyle, title: props.item.title }
   }

@@ -1,9 +1,9 @@
 <template>
   <tree-item
-    v-for="(item, index) of currentItems"
+    v-for="(item, index) of activeItems"
     :item="item"
     :key="item.id"
-    :color="getColor(item, index)"
+    :index="index"
     @update="update($event)"
   ></tree-item>
 </template>
@@ -13,54 +13,75 @@ import { ref } from 'vue'
 import axios from 'axios'
 import TreeItem from './components/TreeItem'
 
-const COLORS = {
-  FIRST: '#BDBDBD',
-  MIDDLE: '#E0E0E0',
-  LAST: '#EEEEEE'
-}
-
 export default {
   name: 'App',
   components: {
     TreeItem
   },
   setup () {
-    let relationships = new Set()
     const items = ref([])
-    const currentItems = ref([])
-
+    const activeItems = ref([])
+    const treeSimple = new Map()
     const fetchItems = () => {
       axios
         .get('https://64b4c8450efb99d862694609.mockapi.io/tree/items')
         .then(response => {
-          relationships = new Set(response.data.filter(({ parent_id }) => parent_id !== null).map((item) => item.parent_id))
+          const data = response.data.map(({ id, parent_id }) => [parent_id, id])
+          data.forEach((item) => {
+            if (treeSimple.has(item[0])) {
+              treeSimple.set(item[0], [...treeSimple.get(item[0]), item[1]])
+            } else {
+              treeSimple.set(item[0], [item[1]])
+            }
+          })
           items.value = response.data.map((item) => ({
             ...item,
             is_open: false,
-            is_childless: !relationships.has(item.id),
+            is_childless: !treeSimple.has(item.id),
             level: item.parent_id !== null ? 0 : null
           }))
-          currentItems.value = items.value.filter(({ parent_id }) => parent_id === null)
+          activeItems.value = items.value.filter(({ parent_id }) => parent_id === null)
         })
     }
 
     fetchItems()
 
-    const getColor = (item, index) => item.parent_id === null ? COLORS.FIRST : index % 2 === 0 ? COLORS.MIDDLE : COLORS.LAST
+    const findItem = (id, list) => list.find((item) => item.id === id)
+
+    const findIndex = (id, list) => list.findIndex((item) => item.id === id)
+
+    const updateIsOpen = (id) => {
+      const currentItem = findItem(id, activeItems.value)
+      const item = findItem(id, items.value)
+      currentItem.is_open = !currentItem.is_open
+      item.is_open = currentItem.is_open
+    }
+
+    const hide = (id) => {
+      const childrenIds = treeSimple.get(id) || []
+      activeItems.value = activeItems.value.filter(({ id }) => !childrenIds.includes(id))
+      childrenIds.forEach(itemId => hide(itemId))
+    }
+
+    const open = (parentIndex, parentId, parentLevel) => {
+      const itemsForShow = items.value
+        .filter(item => item.parent_id === parentId )
+        .map((item) => ({ ...item, level: parentLevel + 1 }))
+      activeItems.value.splice(parentIndex + 1, 0, ...itemsForShow)    
+      itemsForShow.forEach(child => {
+        if (child.is_open) {
+          const childIndex = findIndex(child.id, activeItems.value)
+          open(childIndex, child.id, child.level)
+        }
+      })
+    }
 
     const update = ({ id, is_open, level }) => {
-      const parentIndex = currentItems.value.findIndex((item) => item.id === id)
-      currentItems.value[parentIndex].is_open = !currentItems.value[parentIndex].is_open
-      if (is_open) {
-        currentItems.value = currentItems.value.filter(({ parent_id }) => parent_id !== id)
-      } else {
-        const itemsForShow = items.value
-          .filter(item => item.parent_id === id )
-          .map((item) => ({ ...item, level: level + 1 }))
-        currentItems.value.splice(parentIndex + 1, 0, ...itemsForShow)
-      }
+      updateIsOpen(id)
+      is_open ? hide(id) : open(findIndex(id, activeItems.value), id, level)
     }
-    return { items, currentItems, getColor, update }
+
+    return { items, activeItems, update }
   }
 }
 </script>
